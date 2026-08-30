@@ -137,20 +137,45 @@ def load_processed_dataset(filepath: str = "processed_data.csv") -> pd.DataFrame
 def _style(fig: go.Figure, title: str, subtitle: str | None = None) -> go.Figure:
     """
     Apply consistent, modern styling (white background, clean fonts,
-    minimal gridlines) to any Plotly figure produced by this module.
+    minimal gridlines, fixed height) to any Plotly figure produced by
+    this module.
+
+    IMPORTANT: every color/font set here is explicit on purpose. When
+    Streamlit renders a figure with its default `theme="streamlit"`,
+    it silently overrides layout colors (including font color) to
+    match the app's active theme. If the app happens to be in dark
+    mode, that override collides with the white background we set
+    here and produces the washed-out, barely-readable text seen in
+    the dashboard. The fix on the Streamlit side is to render with
+    `theme=None` (done in app.py) so these settings are respected as-is.
     """
     full_title = title if not subtitle else f"{title}<br><sup>{subtitle}</sup>"
     fig.update_layout(
-        title=dict(text=full_title, x=0.02, xanchor="left"),
+        title=dict(
+            text=full_title,
+            x=0.02,
+            xanchor="left",
+            font=dict(size=17, color="#1a2530"),
+        ),
         plot_bgcolor="white",
         paper_bgcolor="white",
         font=dict(family="Inter, Segoe UI, Arial", size=13, color="#2c3e50"),
-        legend=dict(bgcolor="rgba(0,0,0,0)", title=None),
-        margin=dict(l=40, r=30, t=70, b=40),
-        hoverlabel=dict(bgcolor="white"),
+        legend=dict(
+            bgcolor="rgba(0,0,0,0)",
+            title=None,
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            font=dict(size=11.5),
+        ),
+        margin=dict(l=50, r=30, t=90, b=50),
+        hoverlabel=dict(bgcolor="white", font_size=12),
+        height=440,
     )
-    fig.update_xaxes(showgrid=False, zeroline=False)
-    fig.update_yaxes(showgrid=True, gridcolor="#ecf0f1", zeroline=False)
+    fig.update_xaxes(showgrid=False, zeroline=False, linecolor="#d5dbdb", title_font=dict(size=13))
+    fig.update_yaxes(showgrid=True, gridcolor="#ecf0f1", zeroline=False, title_font=dict(size=13))
     return fig
 
 
@@ -220,7 +245,13 @@ def plot_sleep_tier_by_occupation(df: pd.DataFrame) -> go.Figure:
         color_discrete_map=TIER_COLORS,
         hover_data={COL_OCCUPATION: True, TIER_COL: True, "Count": True},
     )
-    fig.update_layout(barmode="stack", xaxis_title="Occupation", yaxis_title="Number of People")
+    fig.update_layout(
+        barmode="stack",
+        bargap=0.25,
+        xaxis_title="Occupation",
+        yaxis_title="Number of People",
+    )
+    fig.update_xaxes(tickangle=-30)
     return _style(
         fig,
         "Sleep Health Tier by Occupation",
@@ -261,6 +292,14 @@ def plot_steps_vs_sleep(df: pd.DataFrame) -> go.Figure:
             trendline_color_override="#34495e",
             hover_data=hover_cols,
         )
+        # The OLS trendline is added as its own trace named "Overall
+        # Trendline" by Plotly, which crowds the legend. Give it a
+        # short, clearly-styled dashed line instead.
+        for trace in fig.data:
+            if "trendline" in (trace.name or "").lower() or trace.mode == "lines":
+                trace.name = "Trend"
+                trace.line.update(dash="dash", width=2)
+                trace.showlegend = True
     except Exception:
         fig = px.scatter(
             df,
@@ -271,6 +310,10 @@ def plot_steps_vs_sleep(df: pd.DataFrame) -> go.Figure:
             color_discrete_map=TIER_COLORS,
             hover_data=hover_cols,
         )
+    fig.update_traces(
+        marker=dict(size=9, opacity=0.8, line=dict(width=1, color="white")),
+        selector=dict(mode="markers"),
+    )
     fig.update_layout(xaxis_title="Daily Steps", yaxis_title="Sleep Duration (hours)")
     return _style(
         fig,
@@ -304,10 +347,12 @@ def plot_stress_vs_heart_rate(df: pd.DataFrame) -> go.Figure:
         y=COL_HEART_RATE,
         color=TIER_COL,
         size=COL_DAILY_STEPS if COL_DAILY_STEPS in df.columns else None,
+        size_max=22,  # caps bubble size so a few large-step outliers don't dominate/overlap the chart
         category_orders={TIER_COL: _present_tiers(df)},
         color_discrete_map=TIER_COLORS,
         hover_data=hover_cols,
     )
+    fig.update_traces(marker=dict(opacity=0.8, line=dict(width=1, color="white")))
     fig.update_layout(xaxis_title="Stress Level", yaxis_title="Heart Rate (bpm)")
     return _style(
         fig,
@@ -337,13 +382,15 @@ def plot_correlation_heatmap(df: pd.DataFrame) -> go.Figure:
 
     fig = px.imshow(
         corr,
-        text_auto=True,
+        text_auto=".2f",
         color_continuous_scale="RdBu_r",
         zmin=-1,
         zmax=1,
         aspect="auto",
     )
-    fig.update_layout(coloraxis_colorbar=dict(title="Correlation"))
+    fig.update_traces(textfont_size=11)
+    fig.update_layout(coloraxis_colorbar=dict(title="Correlation", len=0.8))
+    fig.update_xaxes(tickangle=-35)
     return _style(fig, "Correlation Heatmap", "Relationships between lifestyle & health metrics")
 
 
@@ -370,11 +417,12 @@ def plot_sleep_distribution(df: pd.DataFrame) -> go.Figure:
         category_orders={TIER_COL: _present_tiers(df)},
         color_discrete_map=TIER_COLORS,
         marginal="box",
-        nbins=30,
-        opacity=0.85,
+        nbins=20,
+        opacity=0.75,
     )
     fig.update_layout(
         barmode="overlay",
+        bargap=0.05,
         xaxis_title="Sleep Duration (hours)",
         yaxis_title="Number of People",
     )
@@ -411,8 +459,13 @@ def plot_sleep_boxplot(df: pd.DataFrame) -> go.Figure:
         category_orders={COL_OCCUPATION: order},
         points="outliers",
     )
-    fig.update_traces(marker_color="#2980b9", line_color="#2c3e50")
+    fig.update_traces(
+        marker=dict(color="#2980b9", size=5, opacity=0.7),
+        line_color="#2c3e50",
+        fillcolor="rgba(41, 128, 185, 0.25)",
+    )
     fig.update_layout(xaxis_title="Occupation", yaxis_title="Sleep Duration (hours)")
+    fig.update_xaxes(tickangle=-30)
     return _style(
         fig,
         "Sleep Duration by Occupation",
