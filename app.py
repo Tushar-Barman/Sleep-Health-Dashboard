@@ -192,24 +192,50 @@ kpi_cols[4].metric(
 # ------------------------------------------------------------------
 st.header("📈 Visual Insights")
 
+
+def render_chart(fig):
+    """
+    Render a Person-3 chart cleanly inside the dashboard.
+
+    Two fixes over a plain st.plotly_chart(fig) call:
+      1. theme=None — Streamlit's default theme="streamlit" silently
+         overrides a figure's own layout colors to match the app's
+         active theme. Since every chart already sets an explicit
+         white background + dark text (see visualization.py:_style),
+         that override is exactly what was causing the washed-out,
+         low-contrast text seen previously. theme=None tells Streamlit
+         to leave the figure's own styling alone.
+      2. Strip the figure's embedded title — the section above it
+         (st.subheader) already labels the chart, so keeping both
+         just duplicated the heading and added clutter.
+    """
+    fig.update_layout(title=None, margin=dict(t=25))
+    st.plotly_chart(fig, width="stretch", theme=None)
+
+
 st.subheader("Sleep Tiers Across Professions")
-st.plotly_chart(plot_sleep_tier_by_occupation(df), width='stretch')
+st.caption("Sorted by count of severely deprived (Tier 1) individuals")
+render_chart(plot_sleep_tier_by_occupation(df))
 
 col_a, col_b = st.columns(2)
 with col_a:
     st.subheader("Daily Steps vs Sleep Duration")
-    st.plotly_chart(plot_steps_vs_sleep(df), width='stretch')
+    render_chart(plot_steps_vs_sleep(df))
 with col_b:
     st.subheader("Stress Level vs Heart Rate")
-    st.plotly_chart(plot_stress_vs_heart_rate(df), width='stretch')
+    st.caption("Bubble size = Daily Steps")
+    render_chart(plot_stress_vs_heart_rate(df))
 
 with st.expander("📌 More charts (correlation, distribution, spread by occupation)"):
     col_c, col_d = st.columns(2)
     with col_c:
-        st.plotly_chart(plot_correlation_heatmap(df), width='stretch')
-        st.plotly_chart(plot_sleep_boxplot(df), width='stretch')
+        st.markdown("**Correlation Heatmap**")
+        render_chart(plot_correlation_heatmap(df))
+        st.markdown("**Sleep Duration by Occupation**")
+        render_chart(plot_sleep_boxplot(df))
     with col_d:
-        st.plotly_chart(plot_sleep_distribution(df), width='stretch')
+        st.markdown("**Sleep Duration Distribution**")
+        render_chart(plot_sleep_distribution(df))
 
 
 # ------------------------------------------------------------------
